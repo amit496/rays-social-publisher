@@ -13,7 +13,7 @@ import {
 
 import { createPost } from "../services/api";
 
-const API_URL = "http://localhost:5000/api";
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 const MAX_FILE_SIZE = 100 * 1024 * 1024;
 
 export default function CreatePost() {
