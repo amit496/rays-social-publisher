@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -6,7 +7,6 @@ import {
   Image,
   Eye,
   Heart,
-  Users,
   FileText,
   ArrowUpRight,
   Clock,
@@ -19,6 +19,9 @@ export default function Dashboard() {
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  const [instagramConnected, setInstagramConnected] = useState(false);
+  const [instagramStatusLoading, setInstagramStatusLoading] = useState(true);
 
   const fetchDashboardData = async () => {
     try {
@@ -34,17 +37,48 @@ export default function Dashboard() {
     }
   };
 
+  const fetchInstagramStatus = async () => {
+    try {
+      setInstagramStatusLoading(true);
+
+      const API_URL = import.meta.env.VITE_API_URL;
+
+      const response = await fetch(
+        `${API_URL}/instagram/status`
+      );
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(
+          data.message || "Unable to check Instagram status"
+        );
+      }
+
+      setInstagramConnected(data.connected === true);
+    } catch (err) {
+      console.error("Instagram status check failed:", err);
+      setInstagramConnected(false);
+    } finally {
+      setInstagramStatusLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchDashboardData();
+    fetchInstagramStatus();
   }, []);
 
   const totalPosts = posts.length;
+
   const scheduledPosts = posts.filter(
     (post) => post.status === "scheduled"
   ).length;
+
   const draftPosts = posts.filter(
     (post) => post.status === "draft"
   ).length;
+
   const publishedPosts = posts.filter(
     (post) => post.status === "published"
   ).length;
@@ -91,9 +125,11 @@ export default function Dashboard() {
       <div className="page-heading dashboard-heading">
         <div>
           <p className="eyebrow">OVERVIEW</p>
+
           <h1>
             Welcome to <span>RAYS TechLab</span>
           </h1>
+
           <p className="muted">
             Manage your social content from one workspace.
           </p>
@@ -103,8 +139,11 @@ export default function Dashboard() {
           <button
             type="button"
             className="secondary-button"
-            onClick={fetchDashboardData}
-            disabled={loading}
+            onClick={() => {
+              fetchDashboardData();
+              fetchInstagramStatus();
+            }}
+            disabled={loading || instagramStatusLoading}
           >
             <RefreshCw size={16} />
             Refresh
@@ -119,21 +158,40 @@ export default function Dashboard() {
 
       <div className="connection">
         <div className="connection-indicator">
-          <span className="status-dot"></span>
+          <span
+            className="status-dot"
+            style={{
+              backgroundColor: instagramStatusLoading
+                ? "#999999"
+                : instagramConnected
+                ? "#b7f34b"
+                : "#ff7777"
+            }}
+          ></span>
+
           <div>
             <strong>Instagram Account</strong>
-            <p>Not connected yet</p>
+
+            <p>
+              {instagramStatusLoading
+                ? "Checking connection..."
+                : instagramConnected
+                ? "@raystechlab — Connected"
+                : "Not connected yet"}
+            </p>
           </div>
         </div>
 
         <Link to="/settings" className="text-button">
-          Connect Account <ArrowUpRight size={15} />
+          {instagramConnected ? "View Settings" : "Connect Account"}
+          <ArrowUpRight size={15} />
         </Link>
       </div>
 
       {error && (
         <div className="panel" style={{ marginBottom: "20px" }}>
           <p style={{ color: "#ff7777" }}>{error}</p>
+
           <button
             type="button"
             className="text-button"
@@ -149,6 +207,7 @@ export default function Dashboard() {
           <div className="stat-card" key={label}>
             <div className="stat-top">
               <span>{label}</span>
+
               <div className="stat-icon">
                 <Icon size={19} />
               </div>
@@ -179,10 +238,13 @@ export default function Dashboard() {
             ) : posts.length === 0 ? (
               <div style={{ textAlign: "center", padding: "30px 10px" }}>
                 <FileText size={32} />
+
                 <h3>No posts yet</h3>
+
                 <p className="muted">
                   Your saved posts will appear here.
                 </p>
+
                 <Link to="/create-post" className="text-button">
                   Create your first post <ArrowUpRight size={15} />
                 </Link>
@@ -196,6 +258,7 @@ export default function Dashboard() {
 
                   <div className="post-info">
                     <strong>{post.topic}</strong>
+
                     <span>
                       {post.postType} · {formatDate(
                         post.status === "scheduled"
@@ -205,9 +268,7 @@ export default function Dashboard() {
                     </span>
                   </div>
 
-                  <span
-                    className={`post-status ${post.status}`}
-                  >
+                  <span className={`post-status ${post.status}`}>
                     {post.status}
                   </span>
                 </div>
@@ -226,10 +287,12 @@ export default function Dashboard() {
             <div className="action-icon">
               <Plus size={19} />
             </div>
+
             <div>
               <strong>Create New Post</strong>
               <p>Prepare your next content</p>
             </div>
+
             <ArrowUpRight size={16} />
           </Link>
 
@@ -237,10 +300,12 @@ export default function Dashboard() {
             <div className="action-icon">
               <CalendarDays size={19} />
             </div>
+
             <div>
               <strong>Content Calendar</strong>
               <p>Manage your posting schedule</p>
             </div>
+
             <ArrowUpRight size={16} />
           </Link>
 
@@ -248,15 +313,18 @@ export default function Dashboard() {
             <div className="action-icon">
               <Image size={19} />
             </div>
+
             <div>
               <strong>Media Library</strong>
               <p>Organize your creative assets</p>
             </div>
+
             <ArrowUpRight size={16} />
           </Link>
 
           <div className="posting-note">
             <Clock size={17} />
+
             <div>
               <strong>Daily Posting Goal</strong>
               <p>Target: Every day at 9:00 AM IST</p>
