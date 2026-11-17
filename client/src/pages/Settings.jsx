@@ -38,20 +38,33 @@ export default function Settings() {
   const [connectionMessage, setConnectionMessage] = useState("");
   const [connectionError, setConnectionError] = useState(false);
 
-  useEffect(() => {
-    try {
-      const storedPreferences = localStorage.getItem(STORAGE_KEY);
 
-      if (storedPreferences) {
-        setPreferences({
-          ...defaultPreferences,
-          ...JSON.parse(storedPreferences)
-        });
+  useEffect(() => {
+    const checkInstagramStatus = async () => {
+      try {
+        const response = await fetch(
+          `${API_URL}/instagram/status`
+        );
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+          throw new Error(
+            data.message || "Unable to check Instagram status"
+          );
+        }
+
+        setInstagramConnected(data.connected === true);
+
+      } catch (error) {
+        console.error("Instagram status check failed:", error);
+        setInstagramConnected(false);
       }
-    } catch (error) {
-      console.error("Failed to load preferences:", error);
-    }
+    };
+
+    checkInstagramStatus();
   }, []);
+
 
   const handleChange = (field, value) => {
     setPreferences((previous) => ({
@@ -77,85 +90,85 @@ export default function Settings() {
   };
 
 
-const connectInstagram = () => {
-  if (!META_APP_ID || !META_CONFIG_ID) {
-    setConnectionError(true);
-    setConnectionMessage(
-      "Meta App ID ya Configuration ID missing hai."
-    );
-    return;
-  }
-
-  if (!window.FB) {
-    setConnectionError(true);
-    setConnectionMessage(
-      "Meta SDK load nahi hua. Page refresh karke dobara try karein."
-    );
-    return;
-  }
-
-  setConnecting(true);
-  setConnectionMessage("");
-  setConnectionError(false);
-
-  window.FB.init({
-    appId: META_APP_ID,
-    autoLogAppEvents: true,
-    xfbml: true,
-    version: GRAPH_VERSION
-  });
-
-  window.FB.login(
-    function (response) {
-      (async () => {
-        try {
-          const code = response.authResponse?.code;
-
-          if (!code) {
-            throw new Error(
-              "Instagram authorization complete nahi hua."
-            );
-          }
-
-          const result = await fetch(
-            `${API_URL}/instagram/exchange`,
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json"
-              },
-              body: JSON.stringify({ code })
-            }
-          );
-
-          const data = await result.json();
-
-          if (!result.ok || !data.success) {
-            throw new Error(
-              data.message || "Instagram connection failed."
-            );
-          }
-
-          setInstagramConnected(true);
-          setConnectionMessage(
-            "Authorization successful. Token securely stored."
-          );
-        } catch (error) {
-          console.error("Instagram connection error:", error);
-          setConnectionError(true);
-          setConnectionMessage(error.message);
-        } finally {
-          setConnecting(false);
-        }
-      })();
-    },
-    {
-      config_id: META_CONFIG_ID,
-      response_type: "code",
-      override_default_response_type: true
+  const connectInstagram = () => {
+    if (!META_APP_ID || !META_CONFIG_ID) {
+      setConnectionError(true);
+      setConnectionMessage(
+        "Meta App ID ya Configuration ID missing hai."
+      );
+      return;
     }
-  );
-};
+
+    if (!window.FB) {
+      setConnectionError(true);
+      setConnectionMessage(
+        "Meta SDK load nahi hua. Page refresh karke dobara try karein."
+      );
+      return;
+    }
+
+    setConnecting(true);
+    setConnectionMessage("");
+    setConnectionError(false);
+
+    window.FB.init({
+      appId: META_APP_ID,
+      autoLogAppEvents: true,
+      xfbml: true,
+      version: GRAPH_VERSION
+    });
+
+    window.FB.login(
+      function (response) {
+        (async () => {
+          try {
+            const code = response.authResponse?.code;
+
+            if (!code) {
+              throw new Error(
+                "Instagram authorization complete nahi hua."
+              );
+            }
+
+            const result = await fetch(
+              `${API_URL}/instagram/exchange`,
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json"
+                },
+                body: JSON.stringify({ code })
+              }
+            );
+
+            const data = await result.json();
+
+            if (!result.ok || !data.success) {
+              throw new Error(
+                data.message || "Instagram connection failed."
+              );
+            }
+
+            setInstagramConnected(true);
+            setConnectionMessage(
+              "Authorization successful. Token securely stored."
+            );
+          } catch (error) {
+            console.error("Instagram connection error:", error);
+            setConnectionError(true);
+            setConnectionMessage(error.message);
+          } finally {
+            setConnecting(false);
+          }
+        })();
+      },
+      {
+        config_id: META_CONFIG_ID,
+        response_type: "code",
+        override_default_response_type: true
+      }
+    );
+  };
 
 
   return (
@@ -206,9 +219,8 @@ const connectInstagram = () => {
             </div>
 
             <span
-              className={`settings-status ${
-                instagramConnected ? "connected" : "pending"
-              }`}
+              className={`settings-status ${instagramConnected ? "connected" : "pending"
+                }`}
             >
               <span className="settings-status-dot" />
               {instagramConnected ? "Authorized" : "Not Connected"}
@@ -266,9 +278,8 @@ const connectInstagram = () => {
 
           {connectionMessage && (
             <div
-              className={`settings-feedback ${
-                connectionError ? "error" : "success"
-              }`}
+              className={`settings-feedback ${connectionError ? "error" : "success"
+                }`}
             >
               {connectionError ? (
                 <AlertCircle size={18} />
@@ -336,9 +347,8 @@ const connectInstagram = () => {
               </div>
 
               <span
-                className={`settings-status ${
-                  instagramConnected ? "connected" : "pending"
-                }`}
+                className={`settings-status ${instagramConnected ? "connected" : "pending"
+                  }`}
               >
                 {instagramConnected ? "Authorized" : "Pending"}
               </span>

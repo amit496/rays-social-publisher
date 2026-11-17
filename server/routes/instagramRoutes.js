@@ -74,6 +74,52 @@ function encryptToken(token) {
   };
 }
 
+// Check saved Instagram connection
+router.get("/status", async (req, res) => {
+  try {
+    const connection = await InstagramConnection.findOne({
+      connectionKey: "primary"
+    }).select("connectedAt expiresAt tokenType");
+
+    if (!connection) {
+      return res.json({
+        success: true,
+        connected: false,
+        message: "Instagram account is not connected"
+      });
+    }
+
+    if (
+      connection.expiresAt &&
+      connection.expiresAt.getTime() <= Date.now()
+    ) {
+      return res.json({
+        success: true,
+        connected: false,
+        message: "Instagram access token has expired"
+      });
+    }
+
+    return res.json({
+      success: true,
+      connected: true,
+      message: "Instagram connection found",
+      connectedAt: connection.connectedAt,
+      expiresAt: connection.expiresAt,
+      tokenType: connection.tokenType
+    });
+
+  } catch (error) {
+    console.error("Instagram status error:", error.message);
+
+    return res.status(500).json({
+      success: false,
+      connected: false,
+      message: "Unable to check Instagram connection"
+    });
+  }
+});
+
 // Exchange authorization code for access token
 router.post("/exchange", async (req, res) => {
   try {
