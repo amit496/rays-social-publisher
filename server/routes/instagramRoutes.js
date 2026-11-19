@@ -4,9 +4,11 @@ const crypto = require("crypto");
 const mongoose = require("mongoose");
 
 const router = express.Router();
-const graphVersion = process.env.META_GRAPH_VERSION || "v25.0";
 
-// Instagram token model
+const graphVersion = process.env.META_GRAPH_VERSION || "v25.0";
+const graphBaseUrl = `https://graph.facebook.com/${graphVersion}`;
+
+// Instagram connection model
 const InstagramConnection =
   mongoose.models.InstagramConnection ||
   mongoose.model(
@@ -18,30 +20,55 @@ const InstagramConnection =
           default: "primary",
           unique: true
         },
-        encryptedToken: { type: String, required: true },
-        iv: { type: String, required: true },
-        authTag: { type: String, required: true },
+        encryptedToken: {
+          type: String,
+          required: true
+        },
+        iv: {
+          type: String,
+          required: true
+        },
+        authTag: {
+          type: String,
+          required: true
+        },
         tokenType: String,
         expiresAt: Date,
-        connectedAt: { type: Date, default: Date.now }
+        connectedAt: {
+          type: Date,
+          default: Date.now
+        }
       },
       { timestamps: true }
     )
   );
 
-// Encrypt token
-function encryptToken(token) {
+// Validate encryption key
+function getEncryptionKey() {
   const key = Buffer.from(
     process.env.IG_TOKEN_ENCRYPTION_KEY || "",
     "hex"
   );
 
   if (key.length !== 32) {
-    throw new Error("Encryption key must be 64 hexadecimal characters");
+    throw new Error(
+      "IG_TOKEN_ENCRYPTION_KEY must be 64 hexadecimal characters"
+    );
   }
 
+  return key;
+}
+
+// Encrypt access token
+function encryptToken(token) {
+  const key = getEncryptionKey();
   const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
+
+  const cipher = crypto.createCipheriv(
+    "aes-256-gcm",
+    key,
+    iv
+  );
 
   const encrypted = Buffer.concat([
     cipher.update(token, "utf8"),
@@ -57,14 +84,7 @@ function encryptToken(token) {
 
 // Decrypt saved token
 function decryptToken(connection) {
-  const key = Buffer.from(
-    process.env.IG_TOKEN_ENCRYPTION_KEY || "",
-    "hex"
-  );
-
-  if (key.length !== 32) {
-    throw new Error("Invalid encryption key configuration");
-  }
+  const key = getEncryptionKey();
 
   const decipher = crypto.createDecipheriv(
     "aes-256-gcm",
@@ -72,23 +92,25 @@ function decryptToken(connection) {
     Buffer.from(connection.iv, "hex")
   );
 
-  decipher.setAuthTag(Buffer.from(connection.authTag, "hex"));
+  decipher.setAuthTag(
+    Buffer.from(connection.authTag, "hex")
+  );
 
   return Buffer.concat([
-    decipher.update(Buffer.from(connection.encryptedToken, "hex")),
+    decipher.update(
+      Buffer.from(connection.encryptedToken, "hex")
+    ),
     decipher.final()
   ]).toString("utf8");
 }
 
-// Meta Graph API helper
+// Graph API helper
 async function graphRequest(path, params = {}) {
-  const url = new URL(
-    `https://graph.facebook.com/${graphVersion}/${path}`
-  );
+  const url = new URL(`${graphBaseUrl}/${path}`);
 
   Object.entries(params).forEach(([key, value]) => {
     if (value !== undefined && value !== null) {
-      url.searchParams.set(key, value);
+      url.searchParams.set(key, String(value));
     }
   });
 
@@ -104,7 +126,27 @@ async function graphRequest(path, params = {}) {
   return data;
 }
 
-// Connection status
+// Get saved connection
+async function getSavedConnection() {
+  const connection = await InstagramConnection.findOne({
+    connectionKey: "primary"
+  });
+
+  if (!connection) {
+    throw new Error("Instagram connection not found");
+  }
+
+  if (
+    connection.expiresAt &&
+    connection.expiresAt.getTime() <= Date.now()
+  ) {
+    throw new Error("Instagram access token has expired");
+  }
+
+  return connection;
+}
+
+// GET /api/instagram/status
 router.get("/status", async (req, res) => {
   try {
     const connection = await InstagramConnection.findOne({
@@ -149,7 +191,7 @@ router.get("/status", async (req, res) => {
   }
 });
 
-// Exchange authorization code
+// POST /api/instagram/exchange
 router.post("/exchange", async (req, res) => {
   try {
     const { code } = req.body;
@@ -180,7 +222,7 @@ router.post("/exchange", async (req, res) => {
     }
 
     const tokenUrl = new URL(
-      `https://graph.facebook.com/${graphVersion}/oauth/access_token`
+      `${graphBaseUrl}/oauth/access_token`
     );
 
     tokenUrl.search = new URLSearchParams({
@@ -193,6 +235,11 @@ router.post("/exchange", async (req, res) => {
     const tokenData = await tokenResponse.json();
 
     if (!tokenResponse.ok || !tokenData.access_token) {
+      console.error(
+        "Meta exchange error:",
+        tokenData.error?.message || "Unknown error"
+      );
+
       return res.status(400).json({
         success: false,
         message: "Meta token exchange failed",
@@ -236,31 +283,15 @@ router.post("/exchange", async (req, res) => {
   }
 });
 
-// Verify token, permissions and connected Instagram account
+// GET /api/instagram/diagnostics
 router.get("/diagnostics", async (req, res) => {
   try {
-    const connection = await InstagramConnection.findOne({
-      connectionKey: "primary"
-    });
-
-    if (!connection) {
-      return res.status(404).json({
-        success: false,
-        message: "No saved Instagram connection found"
-      });
-    }
+    const connection = await getSavedConnection();
 
     if (
-      connection.expiresAt &&
-      connection.expiresAt.getTime() <= Date.now()
+      !process.env.META_APP_ID ||
+      !process.env.META_APP_SECRET
     ) {
-      return res.status(401).json({
-        success: false,
-        message: "Saved access token has expired"
-      });
-    }
-
-    if (!process.env.META_APP_ID || !process.env.META_APP_SECRET) {
       return res.status(500).json({
         success: false,
         message: "Meta App credentials are missing"
@@ -340,9 +371,46 @@ router.get("/diagnostics", async (req, res) => {
   } catch (error) {
     console.error("Instagram diagnostics error:", error.message);
 
-    return res.status(500).json({
+    return res.status(400).json({
       success: false,
       message: "Instagram diagnostics failed",
+      error: error.message
+    });
+  }
+});
+
+// GET /api/instagram/account-check
+router.get("/account-check", async (req, res) => {
+  try {
+    const connection = await getSavedConnection();
+
+    const instagramId = process.env.INSTAGRAM_ACCOUNT_ID;
+
+    if (!instagramId) {
+      return res.status(500).json({
+        success: false,
+        message: "INSTAGRAM_ACCOUNT_ID is missing"
+      });
+    }
+
+    const token = decryptToken(connection);
+
+    const account = await graphRequest(instagramId, {
+      fields: "id,username,account_type",
+      access_token: token
+    });
+
+    return res.json({
+      success: true,
+      instagram: account,
+      message: "Instagram account access verified"
+    });
+  } catch (error) {
+    console.error("Instagram account check error:", error.message);
+
+    return res.status(400).json({
+      success: false,
+      message: "Instagram account could not be accessed",
       error: error.message
     });
   }
